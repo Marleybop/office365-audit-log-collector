@@ -9,7 +9,21 @@ use crate::data_structures::ArbitraryJson;
 
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct TenantConfig {
+    pub name: String,
+    #[serde(rename = "tenantId")]
+    pub tenant_id: String,
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "secretKey")]
+    pub secret_key: String,
+    #[serde(rename = "publisherId")]
+    pub publisher_id: Option<String>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct Config {
+    pub tenants: Option<Vec<TenantConfig>>,
     pub log: Option<LogSubConfig>,
     pub collect: CollectSubConfig,
     pub output: OutputSubConfig
@@ -55,22 +69,31 @@ impl Config {
         runs
     }
 
-    pub fn load_known_blobs(&self) -> HashMap<String, String> {
+    pub fn load_known_blobs(&self, tenant_name: Option<&str>) -> HashMap<String, String> {
         let working_dir = if let Some(i) = &self.collect.working_dir {
             i.as_str()
         } else {
             "./"
         };
 
-        let file_name = Path::new("known_blobs");
-        let mut path = Path::new(working_dir).join(file_name);
+        let file_name = if let Some(name) = tenant_name {
+            format!("known_blobs_{}", name)
+        } else {
+            "known_blobs".to_string()
+        };
+        let mut path = Path::new(working_dir).join(Path::new(&file_name));
         self.load_known_content(path.as_mut_os_string())
     }
 
-    pub fn save_known_blobs(&mut self, known_blobs: &HashMap<String, String>) {
+    pub fn save_known_blobs(&mut self, known_blobs: &HashMap<String, String>, tenant_name: Option<&str>) {
 
+        let file_name = if let Some(name) = tenant_name {
+            format!("known_blobs_{}", name)
+        } else {
+            "known_blobs".to_string()
+        };
         let mut known_blobs_path = Path::new(self.collect.working_dir.as_ref()
-            .unwrap_or(&"./".to_string())).join(Path::new("known_blobs"));
+            .unwrap_or(&"./".to_string())).join(Path::new(&file_name));
         self.save_known_content(known_blobs, &known_blobs_path.as_mut_os_string())
     }
 

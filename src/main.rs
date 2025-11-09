@@ -2,11 +2,12 @@ use std::sync::Arc;
 use clap::Parser;
 use crate::collector::Collector;
 use crate::config::Config;
-use log::{error, Level, LevelFilter, Log, Metadata, Record};
+use log::{error, info, Level, LevelFilter, Log, Metadata, Record};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::sync::Mutex;
-use crate::data_structures::RunState;
+use crate::data_structures::{RunState, TenantContext};
 use crate::interactive_mode::interactive;
+use crate::multi_tenant_collector::MultiTenantCollector;
 
 mod collector;
 mod api_connection;
@@ -14,6 +15,7 @@ mod data_structures;
 mod config;
 mod interfaces;
 mod interactive_mode;
+mod multi_tenant_collector;
 
 
 #[tokio::main]
@@ -25,19 +27,64 @@ async fn main() {
 
     if args.interactive {
         init_interactive_logging(&config, log_tx);
-        interactive::run(args, config, log_rx).await.unwrap();
+        // Interactive mode requires single tenant from CLI
+        let tenant = create_tenant_from_cli(&args);
+        interactive::run(tenant, config, log_rx).await.unwrap();
     } else {
         init_non_interactive_logging(&config);
-        let state = RunState::default();
-        let wrapped_state = Arc::new(Mutex::new(state));
-        let runs = config.get_needed_runs();
-        match Collector::new(args, config, runs, wrapped_state.clone(), None).await {
-            Ok(mut collector) => collector.monitor().await,
-            Err(e) => {
-                error!("Could not start collector: {}", e);
-                panic!("Could not start collector: {}", e);
+
+        // Determine if multi-tenant or single-tenant mode
+        if config.tenants.is_some() {
+            // Multi-tenant mode: tenants defined in config
+            info!("Running in MULTI-TENANT mode");
+            let multi_collector = MultiTenantCollector::new(config, args.oms_key.clone());
+            multi_collector.run().await;
+        } else {
+            // Single-tenant mode: tenant credentials from CLI args
+            info!("Running in SINGLE-TENANT mode (legacy)");
+            let tenant = create_tenant_from_cli(&args);
+            let state = RunState::default();
+            let wrapped_state = Arc::new(Mutex::new(state));
+            let runs = config.get_needed_runs();
+            match Collector::new(
+                tenant,
+                config,
+                runs,
+                wrapped_state.clone(),
+                args.oms_key.clone(),
+                false,
+                None
+            ).await {
+                Ok(mut collector) => collector.monitor().await,
+                Err(e) => {
+                    error!("Could not start collector: {}", e);
+                    panic!("Could not start collector: {}", e);
+                }
             }
         }
+    }
+}
+
+fn create_tenant_from_cli(args: &data_structures::CliArgs) -> TenantContext {
+    let tenant_id = args.tenant_id.as_ref()
+        .expect("--tenant-id required in single-tenant mode")
+        .clone();
+    let client_id = args.client_id.as_ref()
+        .expect("--client-id required in single-tenant mode")
+        .clone();
+    let secret_key = args.secret_key.as_ref()
+        .expect("--secret-key required in single-tenant mode")
+        .clone();
+    let publisher_id = args.publisher_id.as_ref()
+        .unwrap_or(&tenant_id)
+        .clone();
+
+    TenantContext {
+        name: "default".to_string(),
+        tenant_id,
+        client_id,
+        secret_key,
+        publisher_id,
     }
 }
 

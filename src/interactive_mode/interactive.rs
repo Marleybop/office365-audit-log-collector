@@ -19,7 +19,7 @@ use tui_scrollview::{ScrollView, ScrollViewState};
 use crate::api_connection::ApiConnection;
 use crate::collector::Collector;
 use crate::config::Config;
-use crate::data_structures::{CliArgs, RunState};
+use crate::data_structures::{RunState, TenantContext};
 use crate::interactive_mode::tui;
 use crate::interactive_mode::tui::Action;
 
@@ -35,7 +35,7 @@ enum SelectedBlock {
 
 #[derive(Clone)]
 struct State {
-    args: CliArgs,
+    tenant: TenantContext,
     config: Config,
     logs: Vec<(String, Level)>,
     results: Vec<Vec<String>>,
@@ -67,13 +67,13 @@ struct State {
     rate_limit: bool,
 }
 impl State {
-    pub fn new(args: CliArgs,
+    pub fn new(tenant: TenantContext,
                config: Config,
                action_tx: UnboundedSender<Action>,
                interface_tx: UnboundedSender<Vec<String>>
     ) -> Self {
         Self {
-            args,
+            tenant,
             config,
             action_tx,
             interface_tx,
@@ -107,15 +107,15 @@ impl State {
     }
 }
 
-pub async fn run(args: CliArgs, config: Config, mut log_rx: UnboundedReceiver<(String, Level)>) -> Result<()> {
+pub async fn run(tenant: TenantContext, config: Config, mut log_rx: UnboundedReceiver<(String, Level)>) -> Result<()> {
     let (action_tx, mut action_rx) = unbounded_channel();
     let (interface_tx, mut interface_rx) = unbounded_channel();
     let mut tui = tui::Tui::new()?.tick_rate(1.0).frame_rate(30.0);
     tui.enter()?;
 
-    let mut state = State::new(args, config, action_tx.clone(), interface_tx);
+    let mut state = State::new(tenant, config, action_tx.clone(), interface_tx);
     let api = Arc::new(Mutex::new(
-        ApiConnection { args: state.args.clone(), config: state.config.clone(), headers: HeaderMap::new() }));
+        ApiConnection { tenant: state.tenant.clone(), config: state.config.clone(), headers: HeaderMap::new() }));
 
     loop {
         let e = tui.next().await.unwrap();
@@ -435,28 +435,24 @@ fn ui(frame: &mut Frame, state: &mut State) {
     let mut settings_list_items = Vec::<ListItem>::new();
 
     settings_list_items.push(ListItem::new(Line::from(Span::styled(
-        format!("  Tenant ID: {}", state.args.tenant_id), Style::default().fg(
-            if state.args.tenant_id.is_empty() { Color::Red } else { Color::Green }),
+        format!("  Tenant Name: {}", state.tenant.name), Style::default().fg(Color::Green),
     ))));
     settings_list_items.push(ListItem::new(Line::from(Span::styled(
-        format!("  Client ID: {}", state.args.client_id), Style::default().fg(
-            if state.args.client_id.is_empty() { Color::Red } else { Color::Green }),
+        format!("  Tenant ID: {}", state.tenant.tenant_id), Style::default().fg(Color::Green),
+    ))));
+    settings_list_items.push(ListItem::new(Line::from(Span::styled(
+        format!("  Client ID: {}", state.tenant.client_id), Style::default().fg(Color::Green),
     ))));
 
-    let secret_string = if state.args.secret_key.is_empty() {
-        "Secret Key:".to_string()
+    let secret_string = if state.tenant.secret_key.is_empty() {
+        "  Secret Key:".to_string()
     } else {
         format!("  Secret Key: {}{}",
-                state.args.secret_key.clone().split_off(state.args.secret_key.len() - 5),
-                "*".repeat(state.args.secret_key.len() - 5))
+                state.tenant.secret_key.clone().split_off(state.tenant.secret_key.len() - 5),
+                "*".repeat(state.tenant.secret_key.len() - 5))
     };
     settings_list_items.push(ListItem::new(Line::from(Span::styled(
-                secret_string, Style::default().fg(
-            if state.args.secret_key.is_empty() { Color::Red } else { Color::Green }),
-    ))));
-    settings_list_items.push(ListItem::new(Line::from(Span::styled(
-        format!("  Config: {}", state.args.config), Style::default().fg(
-            if state.args.config.is_empty() { Color::Red } else { Color::Green }),
+                secret_string, Style::default().fg(Color::Green),
     ))));
 
     let settings_list = List::new(settings_list_items)
@@ -821,7 +817,7 @@ async fn handle_enter_command_run(state: State,
                                   api: Arc<Mutex<ApiConnection>>)
     -> AnyHowResult<()> {
 
-    let args = state.args.clone();
+    let tenant = state.tenant.clone();
     let mut config = state.config.clone();
     if !load_test {
         config.collect.duplicate = Some(1);
@@ -832,10 +828,12 @@ async fn handle_enter_command_run(state: State,
     let run_state = Arc::new(Mutex::new(RunState::default()));
 
     handle_enter_command_connect(state.clone(), api).await?;
-    let mut collector = Collector::new(args,
+    let mut collector = Collector::new(tenant,
                                        config,
                                        runs,
                                        run_state.clone(),
+                                       String::new(), // oms_key not used in interactive
+                                       true, // interactive mode
                                        Some(state.interface_tx.clone())).await?;
     state.action_tx.send(Action::RunStarted).unwrap();
     let mut elapsed_since_data_point = Instant::now();

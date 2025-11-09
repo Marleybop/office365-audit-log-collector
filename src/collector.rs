@@ -17,7 +17,7 @@ use crate::data_structures;
 use crate::api_connection;
 use crate::api_connection::ApiConnection;
 use crate::config::{Config, ContentTypesSubConfig};
-use crate::data_structures::{ArbitraryJson, Caches, CliArgs, ContentToRetrieve, JsonList, RunState};
+use crate::data_structures::{ArbitraryJson, Caches, ContentToRetrieve, JsonList, RunState, TenantContext};
 use crate::interfaces::azure_oms_interface::OmsInterface;
 use crate::interfaces::interface::Interface;
 use crate::interfaces::file_interface::FileInterface;
@@ -35,6 +35,7 @@ use crate::interfaces::interactive_interface::InteractiveInterface;
 /// logs to determine whether it must be saved. If it must be saved, it is forwarded to active
 /// interfaces. Active interfaces are determined by the config file passed in by the user.
 pub struct Collector {
+    tenant: TenantContext,
     config: Config,
     interfaces: Vec<Box<dyn Interface + Send>>,
     result_rx: Receiver<(String, ContentToRetrieve)>,
@@ -48,17 +49,19 @@ pub struct Collector {
 
 impl Collector {
 
-    pub async fn new(args: CliArgs,
+    pub async fn new(tenant: TenantContext,
                      config: Config,
                      runs: HashMap<String, Vec<(String, String)>>,
                      state: Arc<Mutex<RunState>>,
-                     interactive_sender: Option<UnboundedSender<Vec<String>>> 
+                     oms_key: String,
+                     interactive: bool,
+                     interactive_sender: Option<UnboundedSender<Vec<String>>>
     ) -> Result<Collector> {
 
-        info!("Initializing collector.");
+        info!("Initializing collector for tenant: {}", tenant.name);
         // Initialize interfaces
         let mut interfaces: Vec<Box<dyn Interface + Send>> = Vec::new();
-        if args.interactive {
+        if interactive {
             interfaces.push(Box::new(InteractiveInterface::new(interactive_sender.unwrap())));
         }
         if config.output.file.is_some() {
@@ -71,14 +74,14 @@ impl Collector {
             interfaces.push(Box::new(GraylogInterface::new(config.clone())));
         }
         if config.output.oms.is_some() {
-            interfaces.push(Box::new(OmsInterface::new(config.clone(), args.oms_key.clone())));
+            interfaces.push(Box::new(OmsInterface::new(config.clone(), oms_key.clone())));
         }
 
         // Initialize collector threads
-        let api = api_connection::get_api_connection(args.clone(), config.clone()).await?;
+        let api = api_connection::get_api_connection(tenant.clone(), config.clone()).await?;
         api.subscribe_to_feeds().await?;
 
-        let known_blobs = config.load_known_blobs();
+        let known_blobs = config.load_known_blobs(Some(&tenant.name));
         let (result_rx, stats_rx, kill_tx) =
             get_available_content(api,
                                   config.collect.content_types,
@@ -97,6 +100,7 @@ impl Collector {
             HashMap::new()
         };
         let collector = Collector {
+            tenant,
             config,
             interfaces,
             result_rx,
@@ -136,7 +140,7 @@ impl Collector {
     }
 
     pub fn end_run(&mut self) {
-        self.config.save_known_blobs(&self.known_blobs);
+        self.config.save_known_blobs(&self.known_blobs, Some(&self.tenant.name));
     }
 
     pub async fn check_results(&mut self) -> usize {
@@ -182,6 +186,11 @@ impl Collector {
                 }
             }
         }
+        // Add tenant identification fields
+        log.insert("TenantName".to_string(),
+                   Value::String(self.tenant.name.clone()));
+        log.insert("TenantId".to_string(),
+                   Value::String(self.tenant.tenant_id.clone()));
         log.insert("OriginFeed".to_string(),
                    Value::String(content.content_type.to_string()));
         self.cache.insert(log, &content.content_type);

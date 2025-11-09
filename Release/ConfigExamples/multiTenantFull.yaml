@@ -1,0 +1,90 @@
+# Complete Multi-Tenant Configuration Example
+# Demonstrates all available options for multi-tenant Office 365 log collection
+
+# Optional: Application logging configuration
+log:
+  path: 'collector.log'
+  debug: False
+
+# Define multiple Office 365 tenants
+tenants:
+  - name: production
+    tenantId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    clientId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    secretKey: "production-secret-key"
+    publisherId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"  # Optional
+
+  - name: development
+    tenantId: "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    clientId: "dddddddd-dddd-dddd-dddd-dddddddddddd"
+    secretKey: "development-secret-key"
+    # publisherId optional - will use tenantId if omitted
+
+  - name: staging
+    tenantId: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+    clientId: "ffffffff-ffff-ffff-ffff-ffffffffffff"
+    secretKey: "staging-secret-key"
+
+# Collection settings (shared across all tenants)
+collect:
+  workingDir: ./data  # Storage for per-tenant known_blobs files
+
+  # Content types to collect from all tenants
+  contentTypes:
+    Audit.General: True
+    Audit.AzureActiveDirectory: True
+    Audit.Exchange: True
+    Audit.SharePoint: True
+    DLP.All: True
+
+  cacheSize: 500000      # Logs to batch before output (per tenant)
+  maxThreads: 50         # Concurrent API requests (per tenant)
+  globalTimeout: 60      # Minutes before forcing exit (0 = no timeout)
+  retries: 3             # Retry attempts for failed requests
+  skipKnownLogs: True    # Enable deduplication (per-tenant)
+  hoursToCollect: 24     # Lookback window (max 168 hours)
+
+  # Optional: Filter logs (example shown but empty)
+  filter:
+    Audit.General:
+    Audit.AzureActiveDirectory:
+    Audit.Exchange:
+    Audit.SharePoint:
+    DLP.All:
+
+# Output configuration (all tenants send to same destinations)
+# NOTE: All logs will include TenantName and TenantId fields
+output:
+
+  # CSV file output
+  file:
+    path: 'multi_tenant_output.csv'
+    separateByContentType: True  # Creates separate files per content type
+    separator: ';'
+
+  # Graylog output via raw TCP
+  graylog:
+    address: localhost
+    port: 5555
+
+  # Fluentd output
+  # Note: tenantName will be set dynamically per log
+  fluentd:
+    tenantName: office365  # Base tag (actual logs tagged with TenantName field)
+    address: localhost
+    port: 24224
+
+# Azure Log Analytics output
+# Uncomment and configure if using OMS
+# Requires --oms-key command line argument
+#  azureLogAnalytics:
+#    workspaceId: "your-workspace-id"
+
+# IMPORTANT NOTES:
+# 1. Each tenant will create its own known_blobs file: known_blobs_{tenantName}
+# 2. All logs include these additional fields:
+#    - TenantName: Human-readable name from config
+#    - TenantId: Azure AD tenant ID
+#    - OriginFeed: Content type (e.g., "Audit.Exchange")
+# 3. Tenants run concurrently - adjust cacheSize/maxThreads for your resources
+# 4. For 5+ tenants, consider reducing cacheSize to 100k and maxThreads to 25

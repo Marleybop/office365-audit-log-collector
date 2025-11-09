@@ -11,6 +11,16 @@ use crate::config::ContentTypesSubConfig;
 pub type ArbitraryJson = HashMap<String, Value>;
 pub type JsonList = Vec<ArbitraryJson>;
 
+/// Tenant context for multi-tenant support
+#[derive(Clone, Debug)]
+pub struct TenantContext {
+    pub name: String,
+    pub tenant_id: String,
+    pub client_id: String,
+    pub secret_key: String,
+    pub publisher_id: String,
+}
+
 
 #[derive(Default, Clone, Debug)]
 pub struct Caches {
@@ -164,19 +174,22 @@ pub struct RunState {
 /// Complete all preparation steps in README.MD
 /// to prepare your tenant for collection. Then prepare your config file to specify outputs and
 /// collection options (check the examples folder in the repo). Then run the tool with below options.
+///
+/// MULTI-TENANT MODE: Define tenants in config file under 'tenants:' section
+/// SINGLE-TENANT MODE: Use --tenant-id, --client-id, --secret-key flags (legacy)
 pub struct CliArgs {
 
-    #[arg(long, help = "ID of tenant to retrieve logs for.")]
-    pub tenant_id: String,
+    #[arg(long, help = "ID of tenant to retrieve logs for (single-tenant mode).")]
+    pub tenant_id: Option<String>,
 
-    #[arg(long, help = "Client ID of app registration used to retrieve logs.")]
-    pub client_id: String,
+    #[arg(long, help = "Client ID of app registration used to retrieve logs (single-tenant mode).")]
+    pub client_id: Option<String>,
 
-    #[arg(long, help = "Secret key of app registration used to retrieve logs")]
-    pub secret_key: String,
+    #[arg(long, help = "Secret key of app registration used to retrieve logs (single-tenant mode).")]
+    pub secret_key: Option<String>,
 
-    #[arg(short, long, default_value = "12345678-1234-1234-1234-123456789123", help = "Publisher ID, set to tenant-id if left empty.")]
-    pub publisher_id: String,
+    #[arg(short, long, help = "Publisher ID, defaults to tenant-id if not specified.")]
+    pub publisher_id: Option<String>,
 
     #[arg(long, help = "Path to mandatory config file.")]
     pub config: String,

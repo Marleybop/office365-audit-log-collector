@@ -9,16 +9,16 @@ use futures::{SinkExt, StreamExt};
 use futures::channel::mpsc::{Receiver, Sender};
 use crate::config::Config;
 use crate::data_structures::{JsonList, StatusMessage, GetBlobConfig, GetContentConfig, AuthResult,
-                             ContentToRetrieve, CliArgs};
+                             ContentToRetrieve, TenantContext};
 use anyhow::{anyhow, Result};
 use serde_json::Value;
 
 
 /// Return a logged in API connection object. Use the Headers value to make API requests.
-pub async fn get_api_connection(args: CliArgs, config: Config) -> Result<ApiConnection> {
+pub async fn get_api_connection(tenant: TenantContext, config: Config) -> Result<ApiConnection> {
 
     let mut api = ApiConnection {
-        args,
+        tenant,
         config,
         headers: HeaderMap::new(),
     };
@@ -31,7 +31,7 @@ pub async fn get_api_connection(args: CliArgs, config: Config) -> Result<ApiConn
 /// which sets the headers. These headers can then be used to make authenticated requests.
 #[derive(Clone)]
 pub struct ApiConnection {
-    pub args: CliArgs,
+    pub tenant: TenantContext,
     pub config: Config,
     pub headers: HeaderMap,
 }
@@ -39,16 +39,16 @@ impl ApiConnection {
     /// Use tenant_id, client_id and secret_key to request a bearer token and store it in
     /// our headers. Must be called once before requesting any content.
     pub async fn login(&mut self) -> Result<()> {
-        info!("Logging in to Office Management API.");
+        info!("Logging in to Office Management API for tenant: {}", self.tenant.name);
         let auth_url = format!("https://login.microsoftonline.com/{}/oauth2/token",
-                               self.args.tenant_id.to_string());
+                               self.tenant.tenant_id);
 
         let resource = "https://manage.office.com";
 
         let params = [
             ("grant_type", "client_credentials"),
-            ("client_id", &self.args.client_id),
-            ("client_secret", &self.args.secret_key),
+            ("client_id", &self.tenant.client_id),
+            ("client_secret", &self.tenant.secret_key),
             ("resource", &resource)];
 
         self.headers.insert(CONTENT_TYPE, "application/x-www-form-urlencoded".parse().unwrap());
@@ -62,19 +62,20 @@ impl ApiConnection {
             .await?;
         if !response.status().is_success() {
             let text = response.text().await?;
-            let msg = format!("Received error response to API login: {}", text);
+            let msg = format!("Received error response to API login for tenant {}: {}",
+                            self.tenant.name, text);
             error!("{}", msg);
             return Err(anyhow!("{}", msg));
         }
         let json = response.json::<AuthResult>().await?;
         let token = format!("bearer {}", json.access_token);
         self.headers.insert(AUTHORIZATION, token.parse().unwrap());
-        info!("Successfully logged in to Office Management API.");
+        info!("Successfully logged in to Office Management API for tenant: {}", self.tenant.name);
         Ok(())
     }
 
     fn get_base_url(&self) -> String {
-        format!("https://manage.office.com/api/v1.0/{}/activity/feed", self.args.tenant_id)
+        format!("https://manage.office.com/api/v1.0/{}/activity/feed", self.tenant.tenant_id)
     }
 
     pub async fn get_feeds(&self) -> Result<Vec<String>> {
@@ -189,7 +190,7 @@ impl ApiConnection {
                              content_type,
                              start_time,
                              end_time,
-                             self.args.publisher_id)
+                             self.tenant.publisher_id)
                     ));
             }
         }

@@ -1,0 +1,39 @@
+# Multi-Tenant Office 365 Audit Log Collector Configuration
+# This example shows how to collect logs from multiple Office 365 tenants simultaneously
+
+# Define multiple tenants to collect from
+tenants:
+  - name: contoso
+    tenantId: "00000000-0000-0000-0000-000000000000"  # Replace with your tenant ID
+    clientId: "00000000-0000-0000-0000-000000000000"  # Replace with your client ID
+    secretKey: "your-secret-key-here"                 # Replace with your secret key
+    publisherId: "00000000-0000-0000-0000-000000000000"  # Optional, defaults to tenantId
+
+  - name: fabrikam
+    tenantId: "11111111-1111-1111-1111-111111111111"  # Replace with your tenant ID
+    clientId: "11111111-1111-1111-1111-111111111111"  # Replace with your client ID
+    secretKey: "your-secret-key-here"                 # Replace with your secret key
+    # publisherId is optional - will default to tenantId if not specified
+
+# Shared collection settings (apply to all tenants)
+collect:
+  workingDir: ./  # Directory for known_blobs files (will be per-tenant)
+  contentTypes:
+    Audit.General: True
+    Audit.AzureActiveDirectory: True
+    Audit.Exchange: True
+    Audit.SharePoint: True
+    DLP.All: True
+  cacheSize: 500000  # Logs cached before outputting (per tenant)
+  maxThreads: 50     # Concurrent API requests (per tenant)
+  retries: 3         # Retry attempts for failed requests
+  skipKnownLogs: True  # Enable deduplication (per-tenant tracking)
+  hoursToCollect: 24   # Lookback window in hours (max 168)
+
+# Shared output settings
+# All tenants will send logs to the same destination
+# Logs will be tagged with TenantName and TenantId fields
+output:
+  graylog:
+    address: localhost
+    port: 5555
