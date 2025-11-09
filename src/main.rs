@@ -23,68 +23,46 @@ async fn main() {
 
     let args = data_structures::CliArgs::parse();
     let config = Config::new(args.config.clone());
+
+    // Validate that tenants are configured
+    if config.tenants.is_none() || config.tenants.as_ref().unwrap().is_empty() {
+        error!("No tenants configured in config file. Add a 'tenants:' section with at least one tenant.");
+        panic!("No tenants configured. See config examples in Release/ConfigExamples/");
+    }
+
     let (log_tx, log_rx) = unbounded_channel();
 
     if args.interactive {
         init_interactive_logging(&config, log_tx);
-        // Interactive mode requires single tenant from CLI
-        let tenant = create_tenant_from_cli(&args);
+        // Interactive mode uses the first tenant from config
+        let tenant = get_first_tenant(&config);
+        info!("Interactive mode using tenant: {}", tenant.name);
         interactive::run(tenant, config, log_rx).await.unwrap();
     } else {
         init_non_interactive_logging(&config);
 
-        // Determine if multi-tenant or single-tenant mode
-        if config.tenants.is_some() {
-            // Multi-tenant mode: tenants defined in config
-            info!("Running in MULTI-TENANT mode");
-            let multi_collector = MultiTenantCollector::new(config, args.oms_key.clone());
-            multi_collector.run().await;
+        let tenant_count = config.tenants.as_ref().unwrap().len();
+        if tenant_count == 1 {
+            info!("Starting collection for 1 tenant");
         } else {
-            // Single-tenant mode: tenant credentials from CLI args
-            info!("Running in SINGLE-TENANT mode (legacy)");
-            let tenant = create_tenant_from_cli(&args);
-            let state = RunState::default();
-            let wrapped_state = Arc::new(Mutex::new(state));
-            let runs = config.get_needed_runs();
-            match Collector::new(
-                tenant,
-                config,
-                runs,
-                wrapped_state.clone(),
-                args.oms_key.clone(),
-                false,
-                None
-            ).await {
-                Ok(mut collector) => collector.monitor().await,
-                Err(e) => {
-                    error!("Could not start collector: {}", e);
-                    panic!("Could not start collector: {}", e);
-                }
-            }
+            info!("Starting multi-tenant collection for {} tenants", tenant_count);
         }
+
+        let multi_collector = MultiTenantCollector::new(config, args.oms_key.clone());
+        multi_collector.run().await;
     }
 }
 
-fn create_tenant_from_cli(args: &data_structures::CliArgs) -> TenantContext {
-    let tenant_id = args.tenant_id.as_ref()
-        .expect("--tenant-id required in single-tenant mode")
-        .clone();
-    let client_id = args.client_id.as_ref()
-        .expect("--client-id required in single-tenant mode")
-        .clone();
-    let secret_key = args.secret_key.as_ref()
-        .expect("--secret-key required in single-tenant mode")
-        .clone();
-    let publisher_id = args.publisher_id.as_ref()
-        .unwrap_or(&tenant_id)
-        .clone();
-
+fn get_first_tenant(config: &Config) -> TenantContext {
+    let tenant_config = &config.tenants.as_ref().unwrap()[0];
     TenantContext {
-        name: "default".to_string(),
-        tenant_id,
-        client_id,
-        secret_key,
-        publisher_id,
+        name: tenant_config.name.clone(),
+        tenant_id: tenant_config.tenant_id.clone(),
+        client_id: tenant_config.client_id.clone(),
+        secret_key: tenant_config.secret_key.clone(),
+        publisher_id: tenant_config.publisher_id.as_ref()
+            .unwrap_or(&tenant_config.tenant_id)
+            .clone(),
     }
 }
 

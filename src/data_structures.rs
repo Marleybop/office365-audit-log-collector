@@ -171,32 +171,16 @@ pub struct RunState {
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 /// Collect audit logs from Office Management APIs.
-/// Complete all preparation steps in README.MD
-/// to prepare your tenant for collection. Then prepare your config file to specify outputs and
-/// collection options (check the examples folder in the repo). Then run the tool with below options.
-///
-/// MULTI-TENANT MODE: Define tenants in config file under 'tenants:' section
-/// SINGLE-TENANT MODE: Use --tenant-id, --client-id, --secret-key flags (legacy)
+/// Define your tenants in the config file under the 'tenants:' section.
+/// Run with: office_audit_log_collector --config config.yaml
 pub struct CliArgs {
 
-    #[arg(long, help = "ID of tenant to retrieve logs for (single-tenant mode).")]
-    pub tenant_id: Option<String>,
-
-    #[arg(long, help = "Client ID of app registration used to retrieve logs (single-tenant mode).")]
-    pub client_id: Option<String>,
-
-    #[arg(long, help = "Secret key of app registration used to retrieve logs (single-tenant mode).")]
-    pub secret_key: Option<String>,
-
-    #[arg(short, long, help = "Publisher ID, defaults to tenant-id if not specified.")]
-    pub publisher_id: Option<String>,
-
-    #[arg(long, help = "Path to mandatory config file.")]
+    #[arg(long, help = "Path to config file containing tenant credentials and collection settings.")]
     pub config: String,
 
     #[arg(short, long, default_value = "", help = "Shared key for Azure Log Analytics Workspace.")]
     pub oms_key: String,
 
-    #[arg(short, long, required = false, help = "Interactive interface for (load) testing.")]
+    #[arg(short, long, help = "Interactive mode for testing (uses first tenant from config).")]
     pub interactive: bool,
 }
