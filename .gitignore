@@ -61,3 +61,10 @@ target/
 venv/
 
 known_content
+
+# Configuration files (contain secrets)
+config.yaml
+
+# Data directory (logs and deduplication files)
+data/
+known_blobs_*
