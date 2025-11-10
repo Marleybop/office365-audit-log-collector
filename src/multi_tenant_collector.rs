@@ -1,9 +1,11 @@
 use std::sync::Arc;
+use chrono::Utc;
 use log::info;
 use tokio::sync::Mutex;
 use crate::collector::Collector;
 use crate::config::Config;
 use crate::data_structures::{RunState, TenantContext};
+use crate::notifications::{CollectionResult, TenantResult};
 
 /// Multi-tenant orchestrator that manages concurrent collection from multiple Office 365 tenants
 pub struct MultiTenantCollector {
@@ -21,7 +23,8 @@ impl MultiTenantCollector {
     }
 
     /// Run collection for all configured tenants concurrently
-    pub async fn run(&self) {
+    pub async fn run(&self) -> CollectionResult {
+        let start_time = Utc::now();
         let tenants = self.config.tenants.as_ref()
             .expect("No tenants configured in config file");
 
@@ -46,24 +49,44 @@ impl MultiTenantCollector {
 
             // Spawn a task for each tenant
             let handle = tokio::spawn(async move {
-                Self::run_tenant_collector(tenant_context, config, oms_key).await;
+                Self::run_tenant_collector(tenant_context, config, oms_key).await
             });
 
             handles.push(handle);
         }
 
-        // Wait for all tenant collectors to complete
+        // Wait for all tenant collectors to complete and collect results
+        let mut tenant_results = Vec::new();
+        let mut total_logs = 0;
+
         for handle in handles {
-            if let Err(e) = handle.await {
-                log::error!("Tenant collector task failed: {}", e);
+            match handle.await {
+                Ok(result) => {
+                    total_logs += result.logs_collected;
+                    tenant_results.push(result);
+                }
+                Err(e) => {
+                    log::error!("Tenant collector task failed: {}", e);
+                }
             }
         }
 
+        let end_time = Utc::now();
+        let success = tenant_results.iter().all(|r| r.success);
+
         info!("Multi-tenant collection completed for all tenants");
+
+        CollectionResult {
+            tenant_results,
+            start_time,
+            end_time,
+            total_logs,
+            success,
+        }
     }
 
     /// Run collector for a single tenant
-    async fn run_tenant_collector(tenant: TenantContext, config: Config, oms_key: String) {
+    async fn run_tenant_collector(tenant: TenantContext, config: Config, oms_key: String) -> TenantResult {
         info!("Starting collection for tenant: {}", tenant.name);
 
         let state = RunState::default();
@@ -82,10 +105,26 @@ impl MultiTenantCollector {
             Ok(mut collector) => {
                 info!("Collector initialized for tenant: {}", tenant.name);
                 collector.monitor().await;
-                info!("Collection completed for tenant: {}", tenant.name);
+                let logs_collected = collector.logs_collected();
+                info!("Collection completed for tenant: {} - {} logs collected", tenant.name, logs_collected);
+
+                TenantResult {
+                    tenant_name: tenant.name,
+                    success: true,
+                    logs_collected,
+                    error_message: None,
+                }
             },
             Err(e) => {
-                log::error!("Could not start collector for tenant {}: {}", tenant.name, e);
+                let error_msg = format!("{}", e);
+                log::error!("Could not start collector for tenant {}: {}", tenant.name, error_msg);
+
+                TenantResult {
+                    tenant_name: tenant.name,
+                    success: false,
+                    logs_collected: 0,
+                    error_message: Some(error_msg),
+                }
             }
         }
     }

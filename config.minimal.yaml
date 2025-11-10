@@ -1,0 +1,28 @@
+# Minimal configuration - just the essentials
+# Perfect for getting started quickly
+
+tenants:
+  - name: my-company
+    tenantId: "YOUR-TENANT-ID"
+    clientId: "YOUR-CLIENT-ID"
+    secretKey: "YOUR-SECRET-KEY"
+
+# Run every 3 hours (30m, 1h, 6h, 1d also work)
+schedule:
+  interval: 3h
+
+# Collection settings
+collect:
+  workingDir: /app/data
+  contentTypes:
+    Audit.General: true
+    Audit.AzureActiveDirectory: true
+    Audit.Exchange: true
+    Audit.SharePoint: true
+    DLP.All: true
+
+# Send logs to Graylog
+output:
+  graylog:
+    address: graylog
+    port: 5555

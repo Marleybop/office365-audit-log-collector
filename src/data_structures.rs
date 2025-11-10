@@ -172,7 +172,12 @@ pub struct RunState {
 #[command(version, about, long_about = None)]
 /// Collect audit logs from Office Management APIs.
 /// Define your tenants in the config file under the 'tenants:' section.
-/// Run with: office_audit_log_collector --config config.yaml
+///
+/// Normal usage (daemon mode with schedule):
+///   office_audit_log_collector --config config.yaml
+///
+/// One-time manual run:
+///   office_audit_log_collector --config config.yaml --run-now
 pub struct CliArgs {
 
     #[arg(long, help = "Path to config file containing tenant credentials and collection settings.")]
@@ -183,4 +188,7 @@ pub struct CliArgs {
 
     #[arg(short, long, help = "Interactive mode for testing (uses first tenant from config).")]
     pub interactive: bool,
+
+    #[arg(long, help = "Run collection once immediately and exit (ignore schedule).")]
+    pub run_now: bool,
 }

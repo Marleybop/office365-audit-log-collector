@@ -15,6 +15,26 @@ tenants:
   #   clientId: "CLIENT-ID-2"
   #   secretKey: "SECRET-2"
 
+# Schedule configuration (required for daemon mode)
+# Use simple intervals (30m, 3h, 1d) or cron expressions
+schedule:
+  interval: 3h                    # Run every 3 hours
+  # cron: "0 */3 * * *"           # Alternative: cron format (every 3 hours)
+
+# Optional: Email notifications
+# Sends summary emails after each collection run
+notifications:
+  email:
+    enabled: true
+    smtp:
+      host: smtp.gmail.com
+      port: 587
+      username: your-email@gmail.com
+      password: your-app-password
+    from: office365-collector@yourdomain.com  # Optional, defaults to SMTP username
+    to: alerts@yourdomain.com
+    on: [failure]                  # Options: [success, failure] or just [failure]
+
 # Collection settings
 collect:
   # Where to store deduplication files (inside container this is /app/data)

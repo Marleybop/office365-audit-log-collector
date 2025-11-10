@@ -247,6 +247,10 @@ Logs saved: {}",
         )
     }
 
+    pub fn logs_collected(&self) -> usize {
+        self.saved
+    }
+
 }
 
 

@@ -6,15 +6,20 @@ Complete guide for building and running the Office 365 Audit Log Collector in a 
 
 ```bash
 # 1. Create your config file
-cp config.example.yaml config.yaml
-# Edit config.yaml with your tenant credentials
+cp config.minimal.yaml config.yaml
+# Edit config.yaml with your tenant credentials and schedule
 
 # 2. Create data directory
 mkdir -p data
 
-# 3. Build and run
+# 3. Build and run in daemon mode
 docker-compose up -d
+
+# 4. View logs
+docker-compose logs -f
 ```
+
+The container runs continuously in daemon mode, collecting logs according to your schedule.
 
 ## Detailed Instructions
 
@@ -23,17 +28,24 @@ docker-compose up -d
 Create your `config.yaml` file:
 
 ```bash
-# Copy the example
-cp config.example.yaml config.yaml
+# Copy the minimal example (recommended for beginners)
+cp config.minimal.yaml config.yaml
+
+# Or copy the advanced example
+# cp config.advanced.yaml config.yaml
 
 # Edit with your favorite editor
 nano config.yaml  # or vim, or any editor
 ```
 
-Update these values:
+Update these required values:
 - `tenantId`: Your Azure AD tenant ID
 - `clientId`: Your App Registration client ID
 - `secretKey`: Your App Registration client secret
+- `schedule.interval`: How often to collect (e.g., `3h`)
+
+Optional but recommended:
+- `notifications.email`: SMTP settings for email alerts
 
 See [README.md](README.md) for Azure App Registration setup instructions.
 
@@ -93,10 +105,20 @@ docker ps
 docker logs -f office365-collector
 
 # You should see:
-# "Starting collection for 1 tenant" (or multi-tenant message)
-# "Logging in to Office Management API for tenant: ..."
-# "Successfully logged in..."
+# "Starting Office 365 Audit Log Collector v2.5.0"
+# "Daemon mode enabled"
+# "Configured tenants: 1" (or more)
+# "Schedule: 3h"
+# "Running initial collection..."
+# "Starting multi-tenant collection for X tenants"
+# "Collection complete: X total logs"
+# "Next collection scheduled for: ..."
 ```
+
+The container will:
+1. Collect immediately on startup
+2. Wait for the next scheduled run
+3. Continue running indefinitely
 
 ## Advanced Usage
 
@@ -193,19 +215,55 @@ office365-audit-log-collector/
 
 ## Scheduling with Docker
 
-### Option 1: Cron on Host
+### Built-in Daemon Mode (Default)
 
-Run the container via cron:
+The container has a built-in scheduler - no external cron needed!
 
-```bash
-# Edit crontab
-crontab -e
+Configure the schedule in `config.yaml`:
 
-# Add hourly run
-0 * * * * docker start office365-collector || docker run --rm -v /path/to/config.yaml:/app/config.yaml:ro -v /path/to/data:/app/data office365-audit-collector:latest
+```yaml
+schedule:
+  interval: 3h  # Options: 30m, 1h, 3h, 6h, 12h, 1d
+  # OR use cron:
+  # cron: "0 */3 * * *"  # Every 3 hours
 ```
 
-### Option 2: Kubernetes CronJob
+Then run with docker-compose:
+
+```bash
+docker-compose up -d
+```
+
+The container will:
+- Run collection immediately on startup
+- Continue running indefinitely
+- Collect on schedule
+- Send email notifications (if configured)
+- Restart automatically (`restart: unless-stopped`)
+
+### Manual Trigger (--run-now)
+
+Run collection manually without waiting for schedule:
+
+```bash
+# Run once and exit
+docker exec office365-collector \
+  /app/office_audit_log_collector --config /app/config.yaml --run-now
+
+# Check exit code
+echo $?  # 0 = success, 1 = failure
+```
+
+Use cases:
+- Manual data backfill
+- Testing after config changes
+- Triggered by external event/webhook
+
+### External Scheduling (Alternative)
+
+If you prefer external scheduling over the built-in daemon:
+
+#### Kubernetes Job (with external CronJob)
 
 ```yaml
 apiVersion: batch/v1
@@ -213,7 +271,7 @@ kind: CronJob
 metadata:
   name: office365-audit-collector
 spec:
-  schedule: "0 * * * *"  # Every hour
+  schedule: "0 */3 * * *"  # Every 3 hours
   jobTemplate:
     spec:
       template:
@@ -221,6 +279,7 @@ spec:
           containers:
           - name: collector
             image: office365-audit-collector:latest
+            args: ["--config", "/app/config.yaml", "--run-now"]
             volumeMounts:
             - name: config
               mountPath: /app/config.yaml
@@ -237,6 +296,8 @@ spec:
               claimName: collector-data
           restartPolicy: OnFailure
 ```
+
+**Note:** Config doesn't need `schedule:` section when using `--run-now`.
 
 ## Troubleshooting
 

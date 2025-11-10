@@ -6,12 +6,15 @@ A high-performance Rust application for collecting audit logs from one or more O
 
 - 🚀 **Multi-Tenant Support**: Collect from unlimited Office 365 tenants simultaneously
 - ⚡ **High Performance**: Async Rust with concurrent processing (50 threads per tenant by default)
+- ⏰ **Built-in Daemon Mode**: Internal scheduler with simple intervals (30m, 3h, 1d) or cron expressions
+- 📧 **Email Notifications**: SMTP alerts on collection success/failure with detailed summaries
 - 🔄 **Automatic Deduplication**: Per-tenant tracking prevents duplicate log collection
 - 🏷️ **Automatic Tagging**: All logs tagged with `TenantName` and `TenantId`
 - 📊 **Multiple Outputs**: Graylog, Fluentd, Azure Log Analytics, CSV
 - 🔁 **Retry Logic**: Automatic retry with backoff for failed requests
 - 🎯 **Content Filtering**: Optional filtering by log fields
 - 💾 **Memory Efficient**: Configurable caching and batching
+- 🐳 **Docker Ready**: Multi-stage build, runs as non-root user
 
 ## Quick Start
 
@@ -88,9 +91,9 @@ docker run -v $(pwd)/config.yaml:/app/config.yaml office365-audit-collector
 
 ### 4. Configure
 
-Create a `config.yaml` file:
+Create a `config.yaml` file. See `config.minimal.yaml` for the simplest setup.
 
-#### Single Tenant Example
+#### Single Tenant Daemon Example
 
 ```yaml
 tenants:
@@ -99,16 +102,33 @@ tenants:
     clientId: "your-client-id-here"
     secretKey: "your-client-secret-here"
 
+# Schedule: run every 3 hours
+schedule:
+  interval: 3h  # Options: 30m, 1h, 3h, 6h, 12h, 1d
+
+# Optional: Email notifications
+notifications:
+  email:
+    enabled: true
+    smtp:
+      host: smtp.gmail.com
+      port: 587
+      username: alerts@company.com
+      password: your-app-password
+    to: security@company.com
+    on: [failure]  # Only send on errors
+
 collect:
+  workingDir: /app/data
   contentTypes:
-    Audit.Exchange: True
-    Audit.SharePoint: True
-    Audit.AzureActiveDirectory: True
+    Audit.Exchange: true
+    Audit.SharePoint: true
+    Audit.AzureActiveDirectory: true
   hoursToCollect: 24  # Look back 24 hours
 
 output:
   graylog:
-    address: localhost
+    address: graylog
     port: 5555
 ```
 
@@ -131,17 +151,33 @@ tenants:
     clientId: "staging-client-id"
     secretKey: "staging-secret"
 
+schedule:
+  interval: 3h
+  # cron: "0 */3 * * *"  # Alternative: cron format
+
+notifications:
+  email:
+    enabled: true
+    smtp:
+      host: smtp.gmail.com
+      port: 587
+      username: alerts@company.com
+      password: your-app-password
+    to: security@company.com
+    on: [failure]
+
 collect:
+  workingDir: /app/data
   contentTypes:
-    Audit.General: True
-    Audit.AzureActiveDirectory: True
-    Audit.Exchange: True
-    Audit.SharePoint: True
-    DLP.All: True
+    Audit.General: true
+    Audit.AzureActiveDirectory: true
+    Audit.Exchange: true
+    Audit.SharePoint: true
+    DLP.All: true
   cacheSize: 200000      # Logs to batch (lower for many tenants)
   maxThreads: 30         # Concurrent requests (lower for many tenants)
   hoursToCollect: 24
-  skipKnownLogs: True    # Enable deduplication
+  skipKnownLogs: true    # Enable deduplication
 
 output:
   graylog:
@@ -149,19 +185,53 @@ output:
     port: 5555
 ```
 
-**See `Release/ConfigExamples/` for more examples.**
+**See `config.minimal.yaml`, `config.example.yaml`, and `config.advanced.yaml` for more examples.**
 
 ### 5. Run
 
+#### Daemon Mode (Recommended)
+
+Runs continuously on schedule, collecting immediately at startup:
+
 ```bash
+# From source
 ./target/release/office_audit_log_collector --config config.yaml
+
+# Docker
+docker run -v $(pwd)/config.yaml:/app/config.yaml:ro \
+           -v $(pwd)/data:/app/data \
+           office365-audit-collector
+
+# Docker Compose (recommended)
+docker-compose up -d
 ```
 
-Or with Docker:
+Requires `schedule:` section in config. Collects immediately on start, then waits for scheduled runs.
+
+#### Run-Once Mode
+
+Run collection manually and exit:
 
 ```bash
-docker run -v $(pwd)/config.yaml:/app/config.yaml office365-audit-collector
+# From source
+./target/release/office_audit_log_collector --config config.yaml --run-now
+
+# Docker
+docker exec office365-collector \
+  /app/office_audit_log_collector --config /app/config.yaml --run-now
 ```
+
+Ignores schedule, runs once immediately. Exits with code 0 on success, 1 on failure.
+
+#### Interactive Mode (Testing)
+
+Test configuration with real-time TUI:
+
+```bash
+./target/release/office_audit_log_collector --config config.yaml --interactive
+```
+
+Uses first tenant from config. Great for testing credentials and connectivity.
 
 ### 6. Verify Logs
 
@@ -190,6 +260,43 @@ tenants:
     secretKey: string         # Client secret (required)
     publisherId: string       # Optional, defaults to tenantId
 ```
+
+### Schedule Section (Required for Daemon Mode)
+
+```yaml
+schedule:
+  # Simple interval (easiest)
+  interval: 3h                # Options: 30m, 1h, 3h, 6h, 12h, 1d
+
+  # OR Cron expression (more control)
+  cron: "0 */3 * * *"         # Every 3 hours
+  # cron: "0 9 * * *"         # Daily at 9 AM UTC
+  # cron: "0 9 * * 1-5"       # Weekdays at 9 AM
+```
+
+Choose either `interval` OR `cron`, not both.
+
+### Notifications Section (Optional)
+
+```yaml
+notifications:
+  email:
+    enabled: true             # Enable/disable email notifications
+    smtp:
+      host: smtp.gmail.com    # SMTP server hostname
+      port: 587               # SMTP port (587=TLS, 465=SSL)
+      username: user@mail.com # SMTP username
+      password: secret        # SMTP password/app password
+    from: sender@mail.com     # From address (optional, defaults to username)
+    to: alerts@company.com    # Recipient email
+    on: [failure]             # When to send: [success], [failure], or [success, failure]
+```
+
+Email notifications include:
+- Summary of logs collected per tenant
+- Success/failure status per tenant
+- Total logs collected
+- Next scheduled run time
 
 ### Collection Settings
 
@@ -298,46 +405,62 @@ For large deployments, reduce `maxThreads` to avoid overwhelming your network.
 
 ## Scheduling
 
-### With Cron
+### Built-in Daemon Scheduler (Recommended)
+
+The collector has a built-in scheduler - no external cron needed:
+
+```yaml
+schedule:
+  interval: 3h  # Simple: 30m, 1h, 3h, 6h, 12h, 1d
+  # OR
+  cron: "0 */3 * * *"  # Cron: Every 3 hours at minute 0
+```
+
+**Simple Intervals:**
+- `30m` - Every 30 minutes
+- `1h` - Every hour
+- `3h` - Every 3 hours (recommended)
+- `6h` - Every 6 hours
+- `12h` - Twice daily
+- `1d` - Once daily
+
+**Cron Examples:**
+- `"0 */3 * * *"` - Every 3 hours
+- `"0 9 * * *"` - Daily at 9 AM UTC
+- `"0 9 * * 1-5"` - Weekdays at 9 AM UTC
+- `"*/30 * * * *"` - Every 30 minutes
+
+**Behavior:**
+- Collects immediately on startup (no initial delay)
+- Then waits for next scheduled time
+- Logs next scheduled run after each collection
+- Email notifications include next run time
+
+### Manual Trigger (--run-now)
+
+For manual/on-demand collection:
 
 ```bash
-# Run every hour
-0 * * * * /path/to/office_audit_log_collector --config /path/to/config.yaml
+# Run immediately, ignore schedule
+./office_audit_log_collector --config config.yaml --run-now
 ```
 
-Recommended config for hourly runs:
-```yaml
-collect:
-  hoursToCollect: 2          # Slight overlap to avoid gaps
-  globalTimeout: 55          # Force exit after 55 minutes
+Use cases:
+- Manual data backfill
+- Testing configuration
+- Triggered by external event
+- Kubernetes Job (not CronJob)
+
+### External Scheduling (Alternative)
+
+You can still use external schedulers if preferred:
+
+```bash
+# Disable daemon mode, use --run-now with cron
+0 * * * * /path/to/office_audit_log_collector --config /path/to/config.yaml --run-now
 ```
 
-### With Kubernetes CronJob
-
-```yaml
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: office365-audit-collector
-spec:
-  schedule: "0 * * * *"  # Every hour
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          containers:
-          - name: collector
-            image: office365-audit-collector:latest
-            volumeMounts:
-            - name: config
-              mountPath: /app/config.yaml
-              subPath: config.yaml
-          volumes:
-          - name: config
-            configMap:
-              name: collector-config
-          restartPolicy: OnFailure
-```
+**Note:** Config file doesn't need `schedule:` section when using `--run-now`.
 
 ## Deduplication
 
@@ -357,7 +480,90 @@ These files track which log blobs have been collected to prevent duplicates.
 - Automatically cleaned (expired entries removed)
 - **Do not delete** unless you want to re-collect all logs
 
+## Email Notifications
+
+Send automatic summary emails after each collection run.
+
+### Setup
+
+```yaml
+notifications:
+  email:
+    enabled: true
+    smtp:
+      host: smtp.gmail.com
+      port: 587
+      username: your-email@gmail.com
+      password: your-app-password  # For Gmail: App-specific password
+    from: collector@company.com    # Optional, defaults to username
+    to: security@company.com
+    on: [failure]                  # When to send
+```
+
+### Notification Triggers
+
+- `[failure]` - Send only when collection fails (recommended)
+- `[success]` - Send only when collection succeeds
+- `[success, failure]` - Send always
+
+### Email Content
+
+Subject: `Office 365 Audit Collection Summary - SUCCESS` or `FAILURE`
+
+Body includes:
+- Overall status (success/failure)
+- Total logs collected
+- Per-tenant breakdown:
+  - ✓ tenant-name: 1,234 logs
+  - ✗ tenant-name: Error message
+- Collection duration
+- Next scheduled run time
+
+### SMTP Configuration Examples
+
+**Gmail:**
+```yaml
+smtp:
+  host: smtp.gmail.com
+  port: 587
+  username: your-email@gmail.com
+  password: your-app-password  # Generate at: https://myaccount.google.com/apppasswords
+```
+
+**Office 365:**
+```yaml
+smtp:
+  host: smtp.office365.com
+  port: 587
+  username: sender@company.com
+  password: your-password
+```
+
+**SendGrid:**
+```yaml
+smtp:
+  host: smtp.sendgrid.net
+  port: 587
+  username: apikey
+  password: your-sendgrid-api-key
+```
+
 ## Troubleshooting
+
+### "Schedule configuration required for daemon mode"
+
+**Cause**: Running without `--run-now` flag and no `schedule:` section in config.
+
+**Fix**: Add schedule to config:
+```yaml
+schedule:
+  interval: 3h
+```
+
+Or use `--run-now` to run once:
+```bash
+./office_audit_log_collector --config config.yaml --run-now
+```
 
 ### "No tenants configured in config file"
 

@@ -22,8 +22,39 @@ pub struct TenantConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct ScheduleConfig {
+    #[serde(rename = "interval")]
+    pub interval: Option<String>,
+    pub cron: Option<String>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct SmtpConfig {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct EmailNotificationConfig {
+    pub enabled: bool,
+    pub smtp: SmtpConfig,
+    pub from: Option<String>,
+    pub to: String,
+    pub on: Option<Vec<String>>,  // ["success", "failure"]
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct NotificationConfig {
+    pub email: Option<EmailNotificationConfig>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct Config {
     pub tenants: Option<Vec<TenantConfig>>,
+    pub schedule: Option<ScheduleConfig>,
+    pub notifications: Option<NotificationConfig>,
     pub log: Option<LogSubConfig>,
     pub collect: CollectSubConfig,
     pub output: OutputSubConfig

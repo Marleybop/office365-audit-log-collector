@@ -1,0 +1,97 @@
+# Advanced configuration example
+# Shows all available features and options
+
+tenants:
+  # Multiple tenants are collected concurrently
+  - name: tenant-one
+    tenantId: "TENANT-1-ID"
+    clientId: "CLIENT-1-ID"
+    secretKey: "SECRET-1"
+    publisherId: "CUSTOM-PUBLISHER-1"  # Optional, defaults to tenantId
+
+  - name: tenant-two
+    tenantId: "TENANT-2-ID"
+    clientId: "CLIENT-2-ID"
+    secretKey: "SECRET-2"
+
+# Schedule: Choose one method
+schedule:
+  # Simple interval (easiest):
+  interval: 3h                    # Options: 30m, 1h, 3h, 6h, 12h, 1d
+
+  # OR Cron expression (more control):
+  # cron: "0 */3 * * *"           # Every 3 hours
+  # cron: "0 9 * * *"             # Daily at 9 AM UTC
+  # cron: "0 9 * * 1-5"           # Weekdays at 9 AM UTC
+
+# Email notifications
+notifications:
+  email:
+    enabled: true
+    smtp:
+      host: smtp.gmail.com
+      port: 587                   # 587 for TLS, 465 for SSL
+      username: alerts@company.com
+      password: your-smtp-password
+    from: o365-collector@company.com
+    to: security-team@company.com
+    on: [failure]                 # Options:
+                                  #   [failure] - only send on errors (recommended)
+                                  #   [success] - only send on success
+                                  #   [success, failure] - send always
+
+# Collection settings
+collect:
+  workingDir: /app/data
+
+  # Which audit log types to collect
+  contentTypes:
+    Audit.General: true
+    Audit.AzureActiveDirectory: true
+    Audit.Exchange: true
+    Audit.SharePoint: true
+    DLP.All: true
+
+  # Performance tuning
+  cacheSize: 500000               # Reduce if collecting many tenants
+  maxThreads: 50                  # Concurrent API requests per tenant
+  retries: 3                      # Retry failed API calls
+  hoursToCollect: 24              # Look back period (max 168 hours)
+  skipKnownLogs: true             # Enable deduplication (recommended)
+  globalTimeout: 0                # Minutes before force exit (0 = disabled)
+
+  # Optional: Filter specific events
+  # filter:
+  #   Audit.Exchange:
+  #     Operation: "MailItemsAccessed"
+  #   Audit.SharePoint:
+  #     Operation: "FileDownloaded"
+
+# Output destinations (can enable multiple)
+output:
+  # Graylog via raw TCP
+  graylog:
+    address: graylog              # Hostname or IP
+    port: 5555
+
+  # Fluentd (uncomment to enable)
+  # fluentd:
+  #   tenantName: office365
+  #   address: fluentd
+  #   port: 24224
+
+  # CSV file output (uncomment to enable)
+  # file:
+  #   path: /app/data/output.csv
+  #   separateByContentType: true
+  #   separator: ";"
+
+  # Azure Log Analytics (uncomment to enable)
+  # Requires --oms-key CLI argument
+  # azureLogAnalytics:
+  #   workspaceId: "YOUR-WORKSPACE-ID"
+
+# Optional: Application logging
+log:
+  path: /app/data/collector.log
+  debug: false                    # Set true for verbose logging
