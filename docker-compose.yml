@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  office365-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: office365-audit-collector:latest
+    container_name: office365-collector
+    restart: unless-stopped
+
+    volumes:
+      # Mount your config file
+      - ./config.yaml:/app/config.yaml:ro
+
+      # Persistent storage for deduplication files
+      - ./data:/app/data
+
+    # Optional: Override entrypoint for debugging
+    # command: ["--config", "/app/config.yaml"]
+
+    # Optional: If using Azure Log Analytics
+    # command: ["--config", "/app/config.yaml", "--oms-key", "YOUR_OMS_KEY"]
+
+    # Optional: For interactive mode
+    # stdin_open: true
+    # tty: true
+    # command: ["--config", "/app/config.yaml", "--interactive"]
+
+    networks:
+      - logging
+
+    # Optional: Connect to Graylog/Fluentd if running in same compose
+    # depends_on:
+    #   - graylog
+
+networks:
+  logging:
+    driver: bridge
+
+# Optional: Example with Graylog stack
+# Uncomment if you want to run Graylog in the same compose
+#
+# services:
+#   mongodb:
+#     image: mongo:6
+#     volumes:
+#       - mongo_data:/data/db
+#     networks:
+#       - logging
+#
+#   elasticsearch:
+#     image: docker.elastic.co/elasticsearch/elasticsearch:7.17.15
+#     environment:
+#       - discovery.type=single-node
+#       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+#     volumes:
+#       - es_data:/usr/share/elasticsearch/data
+#     networks:
+#       - logging
+#
+#   graylog:
+#     image: graylog/graylog:5.2
+#     environment:
+#       - GRAYLOG_HTTP_EXTERNAL_URI=http://127.0.0.1:9000/
+#       - GRAYLOG_PASSWORD_SECRET=somepasswordpepper
+#       - GRAYLOG_ROOT_PASSWORD_SHA2=8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918 # admin
+#     ports:
+#       - "9000:9000"   # Graylog web interface
+#       - "5555:5555"   # Raw TCP input
+#     volumes:
+#       - graylog_data:/usr/share/graylog/data
+#     depends_on:
+#       - mongodb
+#       - elasticsearch
+#     networks:
+#       - logging
+#
+# volumes:
+#   mongo_data:
+#   es_data:
+#   graylog_data:

@@ -1,0 +1,71 @@
+# Example configuration for Office 365 Audit Log Collector
+# Copy this file to config.yaml and update with your credentials
+
+tenants:
+  # Add your Office 365 tenant(s) here
+  - name: my-tenant
+    tenantId: "YOUR-TENANT-ID-HERE"
+    clientId: "YOUR-CLIENT-ID-HERE"
+    secretKey: "YOUR-CLIENT-SECRET-HERE"
+    # publisherId: "optional-publisher-id"  # Defaults to tenantId if not specified
+
+  # Add more tenants as needed:
+  # - name: second-tenant
+  #   tenantId: "TENANT-ID-2"
+  #   clientId: "CLIENT-ID-2"
+  #   secretKey: "SECRET-2"
+
+# Collection settings
+collect:
+  # Where to store deduplication files (inside container this is /app/data)
+  workingDir: /app/data
+
+  # Which log types to collect
+  contentTypes:
+    Audit.General: True
+    Audit.AzureActiveDirectory: True
+    Audit.Exchange: True
+    Audit.SharePoint: True
+    DLP.All: True
+
+  # Performance settings
+  cacheSize: 500000       # Logs to cache before output (reduce for many tenants)
+  maxThreads: 50          # Concurrent API requests per tenant
+  retries: 3              # Retry attempts for failures
+  skipKnownLogs: True     # Enable deduplication
+  hoursToCollect: 24      # Look back 24 hours
+  globalTimeout: 0        # Minutes before force exit (0 = disabled)
+
+  # Optional: Filter logs by field values
+  # filter:
+  #   Audit.Exchange:
+  #     Operation: "MailItemsAccessed"
+
+# Output configuration - choose one or more
+output:
+  # Graylog via raw TCP
+  graylog:
+    address: graylog        # Use service name if running in same docker-compose
+    port: 5555
+
+  # Fluentd (uncomment to enable)
+  # fluentd:
+  #   tenantName: office365
+  #   address: fluentd
+  #   port: 24224
+
+  # CSV file output (uncomment to enable)
+  # file:
+  #   path: /app/data/output.csv
+  #   separateByContentType: True
+  #   separator: ";"
+
+  # Azure Log Analytics (uncomment to enable)
+  # Requires --oms-key argument when running
+  # azureLogAnalytics:
+  #   workspaceId: "YOUR-WORKSPACE-ID"
+
+# Optional: Application logging
+# log:
+#   path: /app/data/collector.log
+#   debug: False

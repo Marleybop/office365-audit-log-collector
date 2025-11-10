@@ -1,0 +1,33 @@
+# Git
+.git
+.gitignore
+
+# Rust build artifacts
+target/
+**/*.rs.bk
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# Config examples (will be mounted)
+config.yaml
+*.yaml
+*.yml
+
+# Known blobs (runtime data)
+known_blobs*
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
